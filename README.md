@@ -1,156 +1,241 @@
-# KMUTT Autonomous Golf Cart Localization & Mapping System
+<div align="center">
 
-ระบบแผนที่ 3 มิติและการระบุตำแหน่งสำหรับรถกอล์ฟไฟฟ้าอัตโนมัติ ภายในมหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (KMUTT)
+# 🚗 KMUTT Autonomous Golf Cart
 
-โปรเจกต์นี้พัฒนาขึ้นสำหรับงานวิจัยและพัฒนารถกอล์ฟไฟฟ้าอัตโนมัติ โดยใช้เทคนิค LiDAR-Inertial Odometry และ Localization บน ROS2 Humble เพื่อให้รถสามารถสร้างแผนที่ 3 มิติ คำนวณตำแหน่งของตัวเอง และวิ่งตามเส้นทางอัตโนมัติได้ภายในพื้นที่มหาวิทยาลัย
+## 3D Mapping & Localization System
 
----
+**LiDAR-Inertial Mapping and Point Cloud Localization for an Autonomous Electric Golf Cart**
 
-# System Overview
+![ROS2](https://img.shields.io/badge/ROS2-Humble-blue)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-orange)
+![LiDAR](https://img.shields.io/badge/LiDAR-Ouster%20OS1-green)
+![IMU](https://img.shields.io/badge/IMU-Xsens%20MTi--680-purple)
+![Status](https://img.shields.io/badge/Status-Research%20Project-success)
 
-ระบบประกอบด้วย 2 ส่วนหลัก
-
-1. 3D Mapping (LIO-SAM)
-2. Localization + Path Following
-
-อุปกรณ์หลักที่ใช้ภายในระบบ
-
-* Ouster OS1 LiDAR
-* Xsens MTi-680 IMU/GNSS
-* NVIDIA Jetson AGX Orin
-* ROS2 Humble
-* Ubuntu 22.04
+</div>
 
 ---
 
-# Features
+## 📌 Project Overview
 
-* Real-time 3D Mapping
-* LiDAR + IMU Fusion
-* GPS/RTK Support
-* Point Cloud Localization
+This project focuses on the **3D Mapping** and **Localization** system for an autonomous electric golf cart developed for operation inside **King Mongkut’s University of Technology Thonburi (KMUTT)**.
+
+The system uses **LiDAR**, **IMU**, and **GNSS/RTK** data to build a 3D point cloud map and estimate the vehicle position in real time. The generated map is used as the reference environment for localization and autonomous navigation.
+
+---
+
+## 🧭 Main System Modules
+
+| Module           | Description                                                                       | Main Output       |
+| ---------------- | --------------------------------------------------------------------------------- | ----------------- |
+| **3D Mapping**   | Builds a 3D point cloud map using LiDAR and IMU data                              | Global `.pcd` map |
+| **Localization** | Estimates the vehicle pose by matching current LiDAR scans with the pre-built map | `/pcl_pose`       |
+
+---
+
+# 🗺️ 1. 3D Mapping
+
+## 1.1 Overview
+
+The 3D Mapping module is based on **LIO-SAM**, a LiDAR-Inertial Odometry and Mapping framework. It fuses LiDAR point clouds and IMU measurements to estimate vehicle motion and generate a consistent 3D point cloud map.
+
+The final map is used as the reference map for the localization system.
+
+---
+
+## 1.2 Sensor Inputs
+
+| Sensor   | Model         | Purpose                                  |
+| -------- | ------------- | ---------------------------------------- |
+| LiDAR    | Ouster OS1    | Collect 3D point cloud data              |
+| IMU      | Xsens MTi-680 | Support motion estimation and deskewing  |
+| GNSS/RTK | Xsens MTi-680 | Reduce long-term drift in open-sky areas |
+
+Related ROS2 topics:
+
+```bash
+/ouster/points
+/ouster/imu
+/imu/data
+/gnss
+/gnss_pose
+```
+
+---
+
+## 1.3 Mapping Workflow
+
+```text
+LiDAR Point Cloud
+        ↓
+IMU Data Integration
+        ↓
+Point Cloud Deskewing
+        ↓
+Feature Extraction
+        ↓
+LiDAR Odometry
+        ↓
+Factor Graph Optimization
+        ↓
+Global 3D Point Cloud Map
+```
+
+The mapping process estimates the vehicle trajectory while continuously adding corrected point clouds into the global map frame.
+
+---
+
+## 1.4 Mapping Output
+
+The main outputs from the 3D Mapping module are:
+
+* 3D Point Cloud Map
+* LiDAR Odometry
+* Vehicle Trajectory
+* Global Map Frame
+* `.pcd` map file for localization
+
+---
+
+## 1.5 Save Map Command
+
+Basic command:
+
+```bash
+ros2 service call /lio_sam/save_map lio_sam/srv/SaveMap
+```
+
+Command with resolution and destination path:
+
+```bash
+ros2 service call /lio_sam/save_map lio_sam/srv/SaveMap "{resolution: 0.2, destination: /home/user/Downloads/map}"
+```
+
+---
+
+## 1.6 Important Notes for Mapping
+
+> These points are important for stable and accurate mapping.
+
+* LiDAR point cloud should include `ring` and `time` fields.
+* IMU should be properly aligned with the LiDAR frame.
+* LiDAR and IMU timestamps must be synchronized.
+* Correct extrinsic calibration is required.
+* Open areas with few features may reduce mapping accuracy.
+* GNSS/RTK can help reduce drift in outdoor environments.
+
+---
+
+# 📍 2. Localization
+
+## 2.1 Overview
+
+The Localization module estimates the current position and orientation of the autonomous golf cart on the pre-built 3D map.
+
+It compares the current LiDAR scan with the saved point cloud map using scan matching methods such as **NDT Scan Matching**. The estimated pose is published in the `map` frame and can be used by the path-following controller.
+
+---
+
+## 2.2 Localization Inputs
+
+| Input               | Description                             |
+| ------------------- | --------------------------------------- |
+| Current Point Cloud | Real-time LiDAR scan from the vehicle   |
+| Pre-built Map       | `.pcd` map generated from LIO-SAM       |
+| IMU Data            | Supports orientation estimation         |
+| Odometry            | Helps initialize scan matching          |
+| Initial Pose        | Provides starting pose for localization |
+
+Related ROS2 topics:
+
+```bash
+/cloud
+/map
+/imu
+/odom
+/initialpose
+```
+
+---
+
+## 2.3 Localization Workflow
+
+```text
+Pre-built 3D Map
+        ↓
+Current LiDAR Scan
+        ↓
+Initial Pose / Odometry
+        ↓
+IMU Orientation Support
+        ↓
+NDT Scan Matching
+        ↓
+Vehicle Pose Estimation
+        ↓
+Publish /pcl_pose
+```
+
+---
+
+## 2.4 Main Method
+
+The localization system uses point cloud registration to align the current scan with the reference map.
+
+Main techniques:
+
 * NDT Scan Matching
-* Autonomous Path Following
-* Pure Pursuit Controller
-* RViz Visualization
-* ROS2 Topic Integration
-* Waypoint Navigation
-* MQTT Communication with Web Interface
-
----
-
-# System Architecture
-
-## Mapping System
-
-LIO-SAM ถูกใช้สำหรับสร้างแผนที่ 3 มิติจากข้อมูล LiDAR และ IMU โดยใช้แนวคิด Factor Graph Optimization
-
-Pipeline หลักของระบบประกอบด้วย
-
-1. LiDAR Point Cloud Input
-2. IMU Preintegration
-3. Point Cloud Deskewing
-4. Feature Extraction
-5. Scan Matching
-6. Factor Graph Optimization
-7. Global Map Generation
-
-ผลลัพธ์คือแผนที่ Point Cloud 3 มิติใน frame `map`
-
----
-
-## Localization System
-
-ระบบ Localization ใช้ Point Cloud ปัจจุบันของรถ เปรียบเทียบกับแผนที่อ้างอิงที่สร้างไว้
-
-Input หลัก
-
-* `/cloud`
-* `/imu/data`
-* `/map`
-* `/odom`
-* `/initialpose`
-
-Output หลัก
-
-* `/pcl_pose`
-* `/path`
-
-เทคนิคที่ใช้
-
-* NDT Scan Matching
+* Point Cloud Registration
 * IMU Orientation Compensation
-* Initial Pose Estimation
 * TF Transformation
+* Map-based Pose Estimation
 
 ---
 
-# Path Following Controller
+## 2.5 Localization Output
 
-ระบบควบคุมการวิ่งใช้ Pure Pursuit Controller ที่พัฒนาเพิ่มเติมสำหรับรถกอล์ฟไฟฟ้าอัตโนมัติ
-
-Features ภายใน Controller
-
-* Adaptive Lookahead Distance
-* Cross Track Error Correction
-* Heading Error Compensation
-* Curve Speed Reduction
-* Steering Deadband Compensation
-* Vehicle Trace Visualization
-* Remaining Distance Estimation
-* Goal Detection
-* Safety Stop
-
-ROS2 Topics
-
-Subscribe:
-
-* `/nav_path`
-* `/desired_path`
-* `/pcl_pose`
-* `/imu/data`
-
-Publish:
-
-* `/cmd_vel`
-* `/target_waypoint`
-* `/vehicle_trace`
-* `/remaining_distance`
-* `/path_following_done`
-
----
-
-# ROS2 Environment
-
-Tested Environment
-
-* Ubuntu 22.04
-* ROS2 Humble
-* Ouster OS1-128
-* Xsens MTi-680
-
-Dependencies
+The main outputs from the Localization module are:
 
 ```bash
-sudo apt install ros-humble-pcl-msgs
-sudo apt install ros-humble-perception-pcl
-sudo apt install ros-humble-tf2
-sudo apt install ros-humble-rviz2
+/pcl_pose
+/path
 ```
+
+Additional outputs:
+
+* Current Vehicle Pose
+* Vehicle Trajectory
+* TF between `map`, `odom`, and `base_link`
 
 ---
 
-# Installation
+## 2.6 Important Notes for Localization
 
-Clone Workspace
+> Localization accuracy depends on map quality, initial pose, and environmental features.
 
-```bash
-cd ~/ros2_ws/src
+* The `.pcd` map must match the real environment.
+* Initial pose should be close to the actual vehicle position.
+* Large environmental changes may reduce localization accuracy.
+* Open areas with sparse features can cause scan matching errors.
+* Moving objects may temporarily disturb point cloud matching.
 
-git clone https://github.com/Pakgard007/Localize.git
-```
+---
 
-Build Workspace
+# ⚙️ System Environment
+
+| Component      | Version / Model        |
+| -------------- | ---------------------- |
+| OS             | Ubuntu 22.04           |
+| ROS            | ROS2 Humble            |
+| LiDAR          | Ouster OS1             |
+| IMU/GNSS       | Xsens MTi-680          |
+| Computing Unit | NVIDIA Jetson AGX Orin |
+
+---
+
+# 🚀 Basic Commands
+
+## Build Workspace
 
 ```bash
 cd ~/ros2_ws
@@ -158,17 +243,13 @@ colcon build
 source install/setup.bash
 ```
 
----
-
-# Run Mapping
+## Run 3D Mapping
 
 ```bash
 ros2 launch lio_sam run.launch.py
 ```
 
----
-
-# Run Localization
+## Run Localization
 
 ```bash
 ros2 launch lidar_localization_ros2 localization.launch.py
@@ -176,143 +257,20 @@ ros2 launch lidar_localization_ros2 localization.launch.py
 
 ---
 
-# Run Waypoint Follower
+# 🎯 Project Objective
 
-```bash
-ros2 run waypoint_follower waypoint_follower_cmdvel_imu
-```
+The objective of this project is to develop a reliable 3D Mapping and Localization system for an autonomous electric golf cart. The system enables the vehicle to understand its surrounding environment, estimate its position in real time, and provide accurate pose information for autonomous navigation inside the KMUTT campus.
 
 ---
 
-# RViz Visualization
+# 🧑‍💻 Author
 
-ระบบรองรับการแสดงผลผ่าน RViz2
-
-Visualization ที่ใช้ภายในโปรเจกต์
-
-* Global Map
-* Point Cloud
-* Vehicle Pose
-* TF Tree
-* Navigation Path
-* Vehicle Trace
-* Cross Track Error
-* Target Waypoint
-
----
-
-# MQTT + Web Interface
-
-Frontend ถูกพัฒนาด้วย Next.js และเชื่อมต่อกับ ROS2 ผ่าน MQTT Bridge
-
-Features
-
-* Search Location
-* Voice Command
-* Goal Selection
-* Live Vehicle Tracking
-* Autonomous Navigation Command
-* Cesium 3D Visualization
-* OSM Building Search
-
-Topics ที่ใช้
-
-* `/ros/goal`
-* `/ros/path`
-* `/ros/target_name`
-* `/ros/command`
-
----
-
-# Research Objective
-
-วัตถุประสงค์ของโปรเจกต์นี้คือ
-
-* พัฒนารถกอล์ฟไฟฟ้าอัตโนมัติ
-* สร้างระบบแผนที่ 3 มิติภายในมหาวิทยาลัย
-* พัฒนาระบบ Localization แบบ Real-time
-* พัฒนาระบบนำทางอัตโนมัติสำหรับพื้นที่มหาวิทยาลัย
-* เชื่อมต่อระบบ AI Assistant กับ Autonomous Navigation
-
----
-
-# Example Applications
-
-* Autonomous Campus Vehicle
-* Smart Transportation System
-* Indoor/Outdoor Localization
-* Autonomous Delivery Vehicle
-* Autonomous Shuttle
-
----
-
-# Important Notes
-
-* ระบบต้องใช้ 9-axis IMU
-* ต้องตั้งค่า TF Frame ให้ถูกต้อง
-* LiDAR และ IMU ต้อง Sync เวลาให้ตรงกัน
-* แนะนำให้ใช้ RTK GPS สำหรับพื้นที่กลางแจ้ง
-* Point Cloud ต้องมีข้อมูล ring และ timestamp
-
----
-
-# Known Issues
-
-## Zigzag Motion
-
-สาเหตุส่วนใหญ่เกิดจาก timestamp ของ LiDAR และ IMU ไม่ตรงกัน
-
-## Incorrect Pose Estimation
-
-อาจเกิดจากการตั้งค่า IMU Extrinsic ไม่ถูกต้อง
-
-## Sparse Feature Area
-
-พื้นที่โล่ง เช่น สนามหญ้า อาจมี Feature น้อย ทำให้ Localization คลาดเคลื่อน
-
----
-
-# Future Improvements
-
-* Dynamic Obstacle Avoidance
-* Multi-Sensor Fusion
-* AI-based Navigation
-* Semantic Mapping
-* Cloud-based Monitoring
-* Autonomous Parking
-
----
-
-# Authors
-
-Phuriphat Chomchuenphrueksa
 
 Control and Instrumentation Engineering
 King Mongkut’s University of Technology Thonburi (KMUTT)
 
 ---
 
-# Reference
+# 📚 Reference
 
-This project is developed based on the following open-source projects:
-
-* LIO-SAM
-* LeGO-LOAM
-* lidar_localization_ros2
-* ROS2 Navigation Stack
-
----
-
-# Demonstration
-
-Autonomous Golf Cart Platform for KMUTT Campus Navigation
-
-* 3D Mapping
-* Localization
-* Autonomous Path Following
-* Voice Assistant Navigation
-* Real-time Visualization
-
----
-
-Original reference adapted from LIO-SAM README. fileciteturn0file0
+This project is adapted from LIO-SAM and related ROS2 LiDAR localization packages. fileciteturn0file0
